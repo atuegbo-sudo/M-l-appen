@@ -5,7 +5,7 @@ import numpy as np
 import math
 
 # --- 1. KONFIGURATION & STYLING ---
-st.set_page_config(page_title="GoalPredictor v10.9 SOLID FUSION", layout="wide")
+st.set_page_config(page_title="GoalPredictor TITAN v11.1", layout="wide")
 
 st.markdown("""
     <style>
@@ -16,11 +16,26 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 FOOTBALL_API_KEY = "210961b3460594ed78d0a659e1ebf79b"
-WEATHER_API_KEY = "7bd889f1cb9cec6e42e15fc106125abe" 
+WEATHER_API_KEY = "DIN_OPENWEATHER_NYCKEL" 
 HEADERS = {'x-apisports-key': FOOTBALL_API_KEY}
 BASE_URL = "https://v3.football.api-sports.io"
 
-# --- 2. DATA ENGINES (SÄKRA) ---
+# --- 2. SÄKRA DATA ENGINES ---
+
+@st.cache_data(ttl=3600)
+def get_standings_safe(league_id):
+    """Denna funktion löser TypeError genom att tolka alla ligors tabellformat"""
+    try:
+        url = f"{BASE_URL}/standings?league={league_id}&season=2024"
+        res = requests.get(url, headers=HEADERS, timeout=15).json()
+        if 'response' in res and len(res['response']) > 0:
+            league_data = res['response'][0].get('league', {})
+            standings_raw = league_data.get('standings', [])
+            # Fixar 'lista-i-lista' felet:
+            if isinstance(standings_raw, list) and len(standings_raw) > 0:
+                return standings_raw[0] if isinstance(standings_raw[0], list) else standings_raw
+        return []
+    except: return []
 
 @st.cache_data(ttl=60)
 def get_live_scores(league_id):
@@ -29,14 +44,8 @@ def get_live_scores(league_id):
         return res.get('response', [])
     except: return []
 
-@st.cache_data(ttl=3600)
-def get_full_api_res(endpoint, params=None):
-    try:
-        return requests.get(f"{BASE_URL}/{endpoint}", headers=HEADERS, params=params).json()
-    except: return {}
-
 def get_live_weather(city):
-    if WEATHER_API_KEY == "DIN_OPENWEATHER_NYCKEL":
+    if WEATHER_API_KEY == "7bd889f1cb9cec6e42e15fc106125abe":
         return {"temp": 12, "wind": 4, "cond": "Molnigt", "mod": 1.0}
     try:
         url = f"http://api.openweathermap.org{city}&appid={WEATHER_API_KEY}&units=metric"
@@ -45,21 +54,19 @@ def get_live_weather(city):
         return {"temp": r['main']['temp'], "wind": r['wind']['speed'], "cond": r['weather'][0]['description'], "mod": mod}
     except: return {"temp": 15, "wind": 2, "cond": "Normalt", "mod": 1.0}
 
-def run_fusion_sim(h_stats, a_stats, h2h_mod=1.0, w_mod=1.0):
+# --- 3. NEURAL SIMULATION ENGINE ---
+
+def run_fusion_sim(h_st, a_st, h2h_mod=1.0, w_mod=1.0):
     try:
-        h_played = h_stats['all']['played']
-        a_played = a_stats['all']['played']
-        if h_played == 0 or a_played == 0: return None
-        
-        h_avg = h_stats['all']['goals']['for'] / h_played
-        a_def = a_stats['all']['goals']['against'] / a_played
-        a_avg = a_stats['all']['goals']['for'] / a_played
-        h_def = h_stats['all']['goals']['against'] / h_played
+        h_avg = h_st['all']['goals']['for'] / h_st['all']['played']
+        a_def = a_st['all']['goals']['against'] / a_st['all']['played']
+        a_avg = a_st['all']['goals']['for'] / a_st['all']['played']
+        h_def = h_st['all']['goals']['against'] / h_st['all']['played']
         
         h_xg = (h_avg * (a_def / 1.2)) * 1.18 * w_mod * h2h_mod
         a_xg = (a_avg * (h_def / 1.2)) * w_mod * h2h_mod
         
-        sims = 100000
+        sims = 150000
         h_sim = np.random.poisson(max(0.1, h_xg), sims)
         a_sim = np.random.poisson(max(0.1, a_xg), sims)
         total_g = h_sim + a_sim
@@ -73,10 +80,12 @@ def run_fusion_sim(h_stats, a_stats, h2h_mod=1.0, w_mod=1.0):
         }
     except: return None
 
-# --- 3. DASHBOARD UI ---
+# --- 4. DASHBOARD UI ---
+
+st.title("🔋 GoalPredictor TITAN v11.1")
 
 with st.sidebar:
-    st.header("⚙️ Kontroll")
+    st.header("⚙️ Systemkontroll")
     bankroll = st.number_input("Kassa (kr)", value=10000)
     odds_o25 = st.number_input("Odds Över 2.5", value=1.95)
     odds_u25 = st.number_input("Odds Under 2.5", value=1.95)
@@ -85,10 +94,10 @@ with st.sidebar:
     leagues = {"Premier League": 39, "Allsvenskan": 113, "Serie A": 135, "Bundesliga": 78, "La Liga": 140}
     curr_league = leagues[league_name]
 
-# 1. LIVE SCORES
+# 1. LIVE SCOREBOARD
 live_matches = get_live_scores(curr_league)
 if live_matches:
-    st.subheader("⏱️ Live Just Nu")
+    st.subheader("⏱️ Live Scoreboard")
     for m in live_matches:
         cols = st.columns(4)
         cols.write(m['teams']['home']['name'])
@@ -97,25 +106,16 @@ if live_matches:
         cols.write(f"⚽ {m['fixture']['status']['elapsed']}'")
     st.divider()
 
-# 2. STANDINGS & VALUE HUNTER (FIXAD TYPERROR)
-st.subheader(f"🔥 Spelvärde i {league_name}")
-full_res = get_full_api_res("standings", {"league": curr_league, "season": 2024})
-
-standings = []
-if full_res.get('response'):
-    # Extrahera tabellen säkert
-    try:
-        data = full_res['response'][0]['league']['standings']
-        standings = data[0] if isinstance(data[0], list) else data
-    except (KeyError, IndexError):
-        st.error("Kunde inte tolka tabellformatet.")
+# 2. STANDINGS & VALUE HUNTER
+standings = get_standings_safe(curr_league)
 
 if standings:
+    st.subheader(f"🔥 Spelvärde i {league_name}")
     t_list = sorted([t['team']['name'] for t in standings])
     t_map = {t['team']['name']: t['team']['id'] for t in standings}
     
-    # Kör Value Hunter
-    fixtures = get_full_api_res("fixtures", {"league": curr_league, "season": 2024, "next": 10}).get('response', [])
+    # Kör Value Hunter på nästa matcher
+    fixtures = requests.get(f"{BASE_URL}/fixtures", headers=HEADERS, params={"league": curr_league, "season": 2024, "next": 10}).json().get('response', [])
     val_bets = []
     for f in fixtures:
         h_st = next((t for t in standings if t['team']['name'] == f['teams']['home']['name']), None)
@@ -135,18 +135,18 @@ if standings:
     if val_bets: st.table(pd.DataFrame(val_bets))
     else: st.info("Inga värdespel hittades just nu.")
 
-    # 3. MANUELL ANALYS
+    # 3. MANUELL DJUPANALYS
     st.divider()
-    st.subheader("🔍 Djupanalys")
+    st.subheader("🔍 Manuell Matchanalys (Inkl. Väder)")
     c1, c2 = st.columns(2)
     with c1:
-        h_sel = st.selectbox("Hemmalag", t_list, index=0)
+        h_sel = st.selectbox("Välj Hemmalag", t_list, index=0)
         w = get_live_weather(h_sel)
         st.info(f"🌡️ Väder: {w['temp']}°C, {w['cond']}")
     with c2:
-        a_sel = st.selectbox("Bortalag", t_list, index=1 if len(t_list)>1 else 0)
+        a_sel = st.selectbox("Välj Bortalag", t_list, index=1 if len(t_list)>1 else 0)
 
-    if st.button("KÖR ANALYS"):
+    if st.button("KÖR FULLSTÄNDIG ANALYS"):
         h_st = next(t for t in standings if t['team']['name'] == h_sel)
         a_st = next(t for t in standings if t['team']['name'] == a_sel)
         final = run_fusion_sim(h_st, a_st, w_mod=w['mod'])
@@ -155,6 +155,7 @@ if standings:
             r1.metric("Över 2.5%", f"{round(final['o25'],1)}%")
             r2.metric("Under 2.5%", f"{round(final['u25'],1)}%")
             r3.metric("BTTS%", f"{round(final['btts'],1)}%")
-            st.bar_chart(pd.DataFrame({'Resultat': ['Hemma', 'Oavgjort', 'Borta'], 'Chans': [final['h_p'], final['d_p'], final['a_p']]}).set_index('Resultat'))
+            st.bar_chart(pd.DataFrame({'Chans %': [final['h_p'], final['d_p'], final['a_p']]}, index=['1','X','2']))
+            st.area_chart(pd.DataFrame({h_sel: final['h_dist'], a_sel: final['a_dist']}))
 else:
-    st.warning("Väntar på data från API...")
+    st.error("Kunde inte ladda ligatabellen. Detta kan bero på att säsongen inte startat eller API-problem.")
