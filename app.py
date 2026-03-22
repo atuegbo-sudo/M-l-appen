@@ -1,6 +1,18 @@
+import streamlit as st
+import requests
+import math
+import pandas as pd
+
+# --- KONFIGURATION ---
+API_KEY = "DIN_API_NYCKEL_HÄR" 
+BASE_URL = "https://v3.football.api-sports.io"
+HEADERS = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io'}
+
+# Fortsätt sedan med resten av koden...
 @st.cache_data(ttl=3600)
 def get_teams(league_id):
-    url = f"https://v3.football.api-sports.io{league_id}&season=2023"
+    # ... resten av koden
+ url = f"https://v3.football.api-sports.io{league_id}&season=2023"
     try:
         res = requests.get(url, headers=HEADERS, timeout=10)
         data = res.json()
