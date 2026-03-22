@@ -6,7 +6,7 @@ import numpy as np
 
 # --- 1. KONFIGURATION ---
 FOOTBALL_API_KEY = "210961b3460594ed78d0a659e1ebf79b"
-WEATHER_API_KEY = "7bd889f1cb9cec6e42e15fc106125abe" # <--- SKRIV IN DIN NYCKEL HÄR
+WEATHER_API_KEY = "7bd889f1cb9cec6e42e15fc106125abe" 
 
 # Enkel mapping för städer (kan utökas eller hämtas via API)
 CITY_MAP = {
