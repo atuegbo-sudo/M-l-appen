@@ -2,10 +2,9 @@ import streamlit as st
 import requests
 import pandas as pd
 import numpy as np
-import math
 
 # --- 1. KONFIGURATION & STYLING ---
-st.set_page_config(page_title="GoalPredictor TITAN v11.1", layout="wide")
+st.set_page_config(page_title="GoalPredictor v11.2 PLATINUM", layout="wide")
 
 st.markdown("""
     <style>
@@ -20,19 +19,19 @@ WEATHER_API_KEY = "DIN_OPENWEATHER_NYCKEL"
 HEADERS = {'x-apisports-key': FOOTBALL_API_KEY}
 BASE_URL = "https://v3.football.api-sports.io"
 
-# --- 2. SÄKRA DATA ENGINES ---
+# --- 2. SÄKRA DATA-FUNKTIONER ---
 
 @st.cache_data(ttl=3600)
 def get_standings_safe(league_id):
-    """Denna funktion löser TypeError genom att tolka alla ligors tabellformat"""
     try:
         url = f"{BASE_URL}/standings?league={league_id}&season=2024"
         res = requests.get(url, headers=HEADERS, timeout=15).json()
         if 'response' in res and len(res['response']) > 0:
+            # Navigera djupt för att hitta tabellen oavsett format
             league_data = res['response'][0].get('league', {})
             standings_raw = league_data.get('standings', [])
-            # Fixar 'lista-i-lista' felet:
             if isinstance(standings_raw, list) and len(standings_raw) > 0:
+                # Om det är en lista i en lista [[...]], ta den inre listan
                 return standings_raw[0] if isinstance(standings_raw[0], list) else standings_raw
         return []
     except: return []
@@ -54,23 +53,18 @@ def get_live_weather(city):
         return {"temp": r['main']['temp'], "wind": r['wind']['speed'], "cond": r['weather'][0]['description'], "mod": mod}
     except: return {"temp": 15, "wind": 2, "cond": "Normalt", "mod": 1.0}
 
-# --- 3. NEURAL SIMULATION ENGINE ---
-
-def run_fusion_sim(h_st, a_st, h2h_mod=1.0, w_mod=1.0):
+def run_fusion_sim(h_st, a_st, w_mod=1.0):
     try:
         h_avg = h_st['all']['goals']['for'] / h_st['all']['played']
         a_def = a_st['all']['goals']['against'] / a_st['all']['played']
         a_avg = a_st['all']['goals']['for'] / a_st['all']['played']
         h_def = h_st['all']['goals']['against'] / h_st['all']['played']
-        
-        h_xg = (h_avg * (a_def / 1.2)) * 1.18 * w_mod * h2h_mod
-        a_xg = (a_avg * (h_def / 1.2)) * w_mod * h2h_mod
-        
-        sims = 150000
+        h_xg = (h_avg * (a_def / 1.2)) * 1.18 * w_mod
+        a_xg = (a_avg * (h_def / 1.2)) * w_mod
+        sims = 100000
         h_sim = np.random.poisson(max(0.1, h_xg), sims)
         a_sim = np.random.poisson(max(0.1, a_xg), sims)
         total_g = h_sim + a_sim
-        
         return {
             "o25": np.mean(total_g > 2.5) * 100,
             "u25": np.mean(total_g < 2.5) * 100,
@@ -80,9 +74,9 @@ def run_fusion_sim(h_st, a_st, h2h_mod=1.0, w_mod=1.0):
         }
     except: return None
 
-# --- 4. DASHBOARD UI ---
+# --- 3. DASHBOARD UI ---
 
-st.title("🔋 GoalPredictor TITAN v11.1")
+st.title("🔋 GoalPredictor v11.2 PLATINUM")
 
 with st.sidebar:
     st.header("⚙️ Systemkontroll")
@@ -94,16 +88,16 @@ with st.sidebar:
     leagues = {"Premier League": 39, "Allsvenskan": 113, "Serie A": 135, "Bundesliga": 78, "La Liga": 140}
     curr_league = leagues[league_name]
 
-# 1. LIVE SCOREBOARD
+# 1. LIVE SCOREBOARD (FIXAD COLUMN LOGIK)
 live_matches = get_live_scores(curr_league)
 if live_matches:
     st.subheader("⏱️ Live Scoreboard")
     for m in live_matches:
         cols = st.columns(4)
-        cols.write(m['teams']['home']['name'])
-        cols.write(f"**{m['goals']['home']} - {m['goals']['away']}**")
-        cols.write(m['teams']['away']['name'])
-        cols.write(f"⚽ {m['fixture']['status']['elapsed']}'")
+        cols[0].write(m['teams']['home']['name'])
+        cols[1].write(f"**{m['goals']['home']} - {m['goals']['away']}**")
+        cols[2].write(m['teams']['away']['name'])
+        cols[3].write(f"⚽ {m['fixture']['status']['elapsed']}'")
     st.divider()
 
 # 2. STANDINGS & VALUE HUNTER
@@ -112,10 +106,11 @@ standings = get_standings_safe(curr_league)
 if standings:
     st.subheader(f"🔥 Spelvärde i {league_name}")
     t_list = sorted([t['team']['name'] for t in standings])
-    t_map = {t['team']['name']: t['team']['id'] for t in standings}
     
     # Kör Value Hunter på nästa matcher
-    fixtures = requests.get(f"{BASE_URL}/fixtures", headers=HEADERS, params={"league": curr_league, "season": 2024, "next": 10}).json().get('response', [])
+    fixtures_res = requests.get(f"{BASE_URL}/fixtures", headers=HEADERS, params={"league": curr_league, "season": 2024, "next": 10}).json()
+    fixtures = fixtures_res.get('response', [])
+    
     val_bets = []
     for f in fixtures:
         h_st = next((t for t in standings if t['team']['name'] == f['teams']['home']['name']), None)
@@ -140,11 +135,11 @@ if standings:
     st.subheader("🔍 Manuell Matchanalys (Inkl. Väder)")
     c1, c2 = st.columns(2)
     with c1:
-        h_sel = st.selectbox("Välj Hemmalag", t_list, index=0)
+        h_sel = st.selectbox("Hemmalag", t_list, index=0)
         w = get_live_weather(h_sel)
         st.info(f"🌡️ Väder: {w['temp']}°C, {w['cond']}")
     with c2:
-        a_sel = st.selectbox("Välj Bortalag", t_list, index=1 if len(t_list)>1 else 0)
+        a_sel = st.selectbox("Bortalag", t_list, index=1 if len(t_list)>1 else 0)
 
     if st.button("KÖR FULLSTÄNDIG ANALYS"):
         h_st = next(t for t in standings if t['team']['name'] == h_sel)
@@ -155,7 +150,6 @@ if standings:
             r1.metric("Över 2.5%", f"{round(final['o25'],1)}%")
             r2.metric("Under 2.5%", f"{round(final['u25'],1)}%")
             r3.metric("BTTS%", f"{round(final['btts'],1)}%")
-            st.bar_chart(pd.DataFrame({'Chans %': [final['h_p'], final['d_p'], final['a_p']]}, index=['1','X','2']))
-            st.area_chart(pd.DataFrame({h_sel: final['h_dist'], a_sel: final['a_dist']}))
+            st.bar_chart(pd.DataFrame({'%': [final['h_p'], final['d_p'], final['a_p']]}, index=['1','X','2']))
 else:
-    st.error("Kunde inte ladda ligatabellen. Detta kan bero på att säsongen inte startat eller API-problem.")
+    st.error("Kunde inte ladda ligatabellen. Kontrollera API-nyckeln.")
