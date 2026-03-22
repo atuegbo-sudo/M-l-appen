@@ -5,7 +5,7 @@ import pandas as pd
 
 # --- 1. KONFIGURATION ---
 # Klistra in din nyckel här under:
-API_KEY = "DIN_API_NYCKEL_HÄR"
+API_KEY = "210961b3460594ed78d0a659e1ebf79b"
 
 # Vi använder dubbla headers för att vara säkra på att anslutningen godkänns
 HEADERS = {
