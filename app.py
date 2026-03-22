@@ -4,7 +4,7 @@ import math
 import pandas as pd
 
 # --- KONFIGURATION ---
-API_KEY = "DIN_API_NYCKEL_HÄR" # <--- KLISTRA IN DIN NYCKEL HÄR
+API_KEY = "210961b3460594ed78d0a659e1ebf79b" # <--- KLISTRA IN DIN NYCKEL HÄR
 BASE_URL = "https://v3.football.api-sports.io"
 HEADERS = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': 'v3.football.api-sports.io'}
 
