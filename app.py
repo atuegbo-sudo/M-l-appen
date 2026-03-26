@@ -3,113 +3,116 @@ import requests
 import pandas as pd
 import numpy as np
 
-# --- 1. PRO STYLING (MATRIX DESIGN) ---
-st.set_page_config(page_title="GoalPredictor v150.0 OMNI-LIVE", layout="wide")
-
+# --- 1. AI MATRIX STYLING ---
+st.set_page_config(page_title="OMNI-QUANT PRO", layout="wide")
 st.markdown("""
     <style>
     .stApp { background: #000000; color: #00ff41; font-family: 'Courier New', monospace; }
-    .stMetric { background: #050505; padding: 15px; border: 1px solid #00ff41; box-shadow: 0 0 10px #00ff4122; border-radius: 5px; text-align: center; }
-    .stButton>button { background: #00ff41 !important; color: black !important; font-weight: 900; height: 4em; width: 100%; border: none; text-transform: uppercase; letter-spacing: 2px; }
-    .stButton>button:hover { background: #ffffff !important; box-shadow: 0 0 30px #00ff41; }
-    .neural-box { background: #050505; padding: 25px; border: 2px solid #00ff41; margin-bottom: 25px; border-radius: 10px; text-align: center; }
-    [data-testid="stMetricValue"] { color: #00ff41 !important; font-size: 1.6rem !important; }
-    [data-testid="stMetricLabel"] { color: #ffffff !important; font-size: 0.8rem !important; text-transform: uppercase; }
-    .streamlit-expanderHeader { background-color: #080808 !important; border: 1px solid #333 !important; color: #00ff41 !important; }
+    .neural-box { background: #050505; padding: 20px; border: 2px solid #00ff41; border-radius: 10px; margin-bottom: 20px; }
+    .signal-gold { color: #ffd700; font-weight: bold; border: 1px solid #ffd700; padding: 15px; text-align: center; background: #221a00; }
+    [data-testid="stMetricValue"] { color: #00ff41 !important; font-size: 2rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CONFIG ---
-FOOTBALL_API_KEY = "210961b3460594ed78d0a659e1ebf79b"
-HEADERS = {'x-apisports-key': FOOTBALL_API_KEY}
-BASE_URL = "https://v3.football.api-sports.io"
-
-# --- 3. ENGINES ---
-
-@st.cache_data(ttl=30)
-def get_live_data():
-    try:
-        res = requests.get(f"{BASE_URL}/fixtures?live=all", headers=HEADERS, timeout=10).json()
-        return res.get('response', [])
-    except: return []
+# --- 2. CONFIG & API ---
+API_KEY = "210961b3460594ed78d0a659e1ebf79b"
+HEADERS = {'x-apisports-key': API_KEY}
 
 @st.cache_data(ttl=3600)
-def get_league_standings(league_id):
-    try:
-        res = requests.get(f"{BASE_URL}/standings?league={league_id}&season=2025", headers=HEADERS).json()
-        return res['response']['league']['standings'] if res.get('response') else []
-    except: return []
+def get_advanced_stats(l_id):
+    # Hämtar tabell och underliggande stats
+    url = f"https://v3.football.api-sports.io{l_id}&season=2025"
+    res = requests.get(url, headers=HEADERS).json()
+    return res['response']['league']['standings'] if res.get('response') else []
 
-def run_deep_simulation(h_exp, a_exp, sims=1000000):
-    """Neural motor för 0.5 - 5.5 mål"""
-    h_s = np.random.poisson(max(0.1, h_exp * 1.10), sims)
-    a_s = np.random.poisson(max(0.1, a_exp * 0.95), sims)
+def run_pro_quantum_sim(h_att, a_def, a_att, h_def, corner_factor, injury_mod):
+    """Avancerad AI-motor som väger in alla faktorer"""
+    # Justera anfallsstyrka baserat på skador och hörnor
+    h_final_xg = (h_att * a_def) * corner_factor * injury_mod[0]
+    a_final_xg = (a_att * h_def) * corner_factor * injury_mod[1]
+    
+    # 1 miljon iterationer för maximal precision
+    h_s = np.random.poisson(h_final_xg, 1000000)
+    a_s = np.random.poisson(a_final_xg, 1000000)
     totals = h_s + a_s
+    
     lines = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
-    return {line: round(np.mean(totals > line) * 100, 1) for line in lines}
+    return {line: np.mean(totals > line) * 100 for line in lines}
 
-def analyze_live_spectrum(h_g, a_g, elapsed, avg_goals=2.8):
-    """Live-motor som beräknar chansen för SLUTRESULTAT över olika linjer"""
-    rem_time = max(0, 90 - elapsed)
-    time_factor = rem_time / 90
-    curr_tot = h_g + a_g
-    
-    future_xg = avg_goals * time_factor
-    future_goals = np.random.poisson(future_xg, 100000)
-    
-    final_totals = curr_tot + future_goals
-    lines = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
-    return {line: round(np.mean(final_totals > line) * 100, 1) for line in lines}
+# --- 3. UI & INPUTS ---
+st.title("🧠 OMNI-QUANT AI: DEEP DATA PRECISION")
 
-# --- 4. UI TABS ---
-tab1, tab2 = st.tabs(["🧠 NEURAL SCANNER", "🔴 LIVE MONITOR"])
-
-with tab1:
-    st.sidebar.header("🎯 System Control")
-    LEAGUES = {"Allsvenskan": 113, "Premier League": 39, "La Liga": 140, "Serie A": 135, "Bundesliga": 78}
-    l_name = st.sidebar.selectbox("Välj Liga", list(LEAGUES.keys()))
-    l_id = LEAGUES[l_name]
-    standings = get_league_standings(l_id)
+with st.sidebar:
+    st.header("📊 Deep Data Inputs")
+    bankroll = st.number_input("Bankrulle (kr)", value=1000)
+    m_odds = st.number_input("Marknadsodds (Över 2.5)", value=2.0, step=0.05)
     
-    if standings:
-        teams = sorted([t['team']['name'] for t in standings])
-        c1, c2 = st.columns(2)
-        h_team = c1.selectbox("Hemmalag", teams, index=0)
-        a_team = c2.selectbox("Bortalag", teams, index=1)
+    st.divider()
+    st.subheader("🛠️ Manuella AI-Parametrar")
+    corners = st.slider("Förväntat hörntryck (Totalt)", 0, 20, 10)
+    h_injuries = st.checkbox("Hemmalag: Nyckelspelare borta?")
+    a_injuries = st.checkbox("Bortalag: Nyckelspelare borta?")
+
+# --- 4. EXECUTION ---
+LEAGUES = {"Allsvenskan": 113, "Premier League": 39, "La Liga": 140}
+l_name = st.selectbox("Välj Liga", list(LEAGUES.keys()))
+standings = get_advanced_stats(LEAGUES[l_name])
+
+if standings:
+    teams = sorted([t['team']['name'] for t in standings])
+    c1, c2 = st.columns(2)
+    h_team = c1.selectbox("Hemmalag", teams, index=0)
+    a_team = c2.selectbox("Bortalag", teams, index=1)
+
+    if st.button("RUN DEEP DATA ANALYSIS"):
+        h_d = next(t for t in standings if t['team']['name'] == h_team)
+        a_d = next(t for t in standings if t['team']['name'] == a_team)
         
-        if st.button("EXECUTE OMNI-SCAN (UPP TILL 5.5 MÅL)"):
-            h_d = next(t for t in standings if t['team']['name'] == h_team)
-            a_d = next(t for t in standings if t['team']['name'] == a_team)
-            h_avg = h_d['all']['goals']['for'] / (h_d['all']['played'] or 1)
-            a_avg = a_d['all']['goals']['for'] / (a_d['all']['played'] or 1)
-            
-            probs = run_deep_simulation(h_avg, a_avg)
-            
-            st.markdown(f"<div class='neural-box'><h2>🎯 {h_team} vs {a_team}</h2></div>", unsafe_allow_html=True)
-            res_cols = st.columns(6)
-            for i, line in enumerate(probs):
-                with res_cols[i]:
-                    st.metric(f"ÖVER {line}", f"{probs[line]}%")
-    else:
-        st.error("Kunde inte hämta data för vald liga.")
+        # 1. Grund-styrka (xG per match)
+        h_att = (h_d['all']['goals']['for'] / h_d['all']['played']) / 1.3
+        h_def = (h_d['all']['goals']['against'] / h_d['all']['played']) / 1.3
+        a_att = (a_d['all']['goals']['for'] / a_d['all']['played']) / 1.3
+        a_def = (a_d['all']['goals']['against'] / a_d['all']['played']) / 1.3
+        
+        # 2. Faktorer (Hörnor ökar chansen med ca 2% per hörn över snittet)
+        c_factor = 1 + ((corners - 10) * 0.02)
+        
+        # 3. Skador (Sänker lagets xG med 15% om nyckelspelare saknas)
+        h_mod = 0.85 if h_injuries else 1.0
+        a_mod = 0.85 if a_injuries else 1.0
+        
+        # 4. Kör simulering (1.15 = Hemmafördel)
+        probs = run_pro_quantum_sim(h_att * 1.15, a_def, a_att, h_def, c_factor, [h_mod, a_mod])
+        
+        # --- PRESENTATION ---
+        st.markdown(f"<div class='neural-box'><h2>🎯 {h_team} vs {a_team}</h2></div>", unsafe_allow_html=True)
+        
+        cols = st.columns(6)
+        for i, line in enumerate(probs):
+            with cols[i]:
+                st.metric(f"ÖVER {line}", f"{round(probs[line], 1)}%")
 
-with tab2:
-    st.subheader("🔴 Global Live Monitor (Klicka för fullt målspektrum)")
-    live_matches = get_live_data()
-    
-    if live_matches:
-        for m in live_matches:
-            h_n, a_n = m['teams']['home']['name'], m['teams']['away']['name']
-            h_g, a_g = m['goals']['home'], m['goals']['away']
-            elap = m['fixture']['status']['elapsed']
-            
-            with st.expander(f"⏱️ {elap}' | {h_n} {h_g} - {a_g} {a_n}"):
-                st.write("### 🧠 Live Spectrum Analysis (Slutresultat)")
-                live_probs = analyze_live_spectrum(h_g, a_g, elap)
-                
-                l_cols = st.columns(6)
-                for i, line in enumerate(live_probs):
-                    with l_cols[i]:
-                        st.metric(f"SLUT ÖVER {line}", f"{live_probs[line]}%")
-    else:
-        st.info("Inga matcher live just nu. Matcherna ikväll (t.ex. Ukraina-Sverige) startar kl. 20:45!")
+        # KELLY CRITERION AI
+        prob_25 = probs[2.5] / 100
+        edge = (prob_25 * m_odds) - 1
+        fair_odds = 1 / prob_25
+        
+        st.divider()
+        res_c1, res_c2 = st.columns(2)
+        
+        with res_c1:
+            if edge > 0:
+                st.markdown("<div class='signal-gold'>🔥 SIGNAL: VALUE DETECTED</div>", unsafe_allow_html=True)
+                kelly_pct = edge / (m_odds - 1)
+                stake = round(bankroll * kelly_pct * 0.1) # 10% Kelly (Säkerhetsmarginal)
+                st.write(f"**AI Beslut:** Satsa **{stake} kr** på Över 2.5 mål.")
+                st.write(f"**Värde (Edge):** +{round(edge*100, 2)}%")
+            else:
+                st.warning("⚠️ SKIP: Inget spelvärde hittat. Marknaden är för effektiv.")
+        
+        with res_c2:
+            st.write(f"**AI Fair Odds:** {round(fair_odds, 2)}")
+            st.write(f"**Marknadens Odds:** {m_odds}")
+
+else:
+    st.error("Kunde inte nå API-data för ligastatistik.")
