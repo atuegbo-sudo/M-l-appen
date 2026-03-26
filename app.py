@@ -1,6 +1,6 @@
 import streamlit as st
 import requests
-import pd
+import pandas as pd
 import numpy as np
 
 # --- 1. PRO STYLING (MATRIX DESIGN) ---
@@ -45,7 +45,7 @@ def run_deep_simulation(h_exp, a_exp, sims=1000000):
     h_s = np.random.poisson(max(0.1, h_exp * 1.10), sims)
     a_s = np.random.poisson(max(0.1, a_exp * 0.95), sims)
     totals = h_s + a_s
-    lines = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5] # Upp till 5.5 mål
+    lines = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
     return {line: round(np.mean(totals > line) * 100, 1) for line in lines}
 
 def analyze_live_spectrum(h_g, a_g, elapsed, avg_goals=2.8):
@@ -103,7 +103,6 @@ with tab2:
             h_g, a_g = m['goals']['home'], m['goals']['away']
             elap = m['fixture']['status']['elapsed']
             
-            # Klickbar expander som nu visar ALLA linjer live
             with st.expander(f"⏱️ {elap}' | {h_n} {h_g} - {a_g} {a_n}"):
                 st.write("### 🧠 Live Spectrum Analysis (Slutresultat)")
                 live_probs = analyze_live_spectrum(h_g, a_g, elap)
