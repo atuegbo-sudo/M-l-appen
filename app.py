@@ -1,18 +1,24 @@
 import streamlit as st
 import requests
 import numpy as np
-import pandas as pd
 from datetime import datetime
 
-# --- 1. GLOBAL SETUP & STYLE ---
-st.set_page_config(page_title="GoalPredictor v150.0 GLOBAL", layout="wide")
+# --- 1. UI SETUP ---
+st.set_page_config(page_title="GoalPredictor v150.0 OMNI-GLOBAL", layout="wide")
 st.markdown("""
     <style>
     .stApp { background: #000000; color: #00ff41; font-family: 'Courier New', monospace; }
-    .live-card { background: #080808; padding: 15px; border-left: 5px solid #00ff41; margin-bottom: 10px; border-radius: 5px; }
-    .upcoming-card { background: #050505; padding: 15px; border-left: 5px solid #555; margin-bottom: 10px; border-radius: 5px; }
-    .neural-box { background: #050505; padding: 20px; border: 2px solid #00ff41; text-align: center; }
-    h3 { color: #00ff41 !important; text-transform: uppercase; }
+    .live-card { 
+        background: #080808; 
+        padding: 20px; 
+        border-left: 5px solid #00ff41; 
+        margin-bottom: 12px; 
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0,255,65,0.1);
+    }
+    .status-live { color: #ff0000; font-weight: bold; animation: blinker 1.5s linear infinite; }
+    @keyframes blinker { 50% { opacity: 0; } }
+    .neural-text { color: #00ff41; font-size: 0.85em; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -20,90 +26,87 @@ st.markdown("""
 FOOTBALL_API_KEY = "210961b3460594ed78d0a659e1ebf79b"
 HEADERS = {'x-apisports-key': FOOTBALL_API_KEY}
 
-# --- 2. GLOBAL DATA ENGINE ---
+# --- 2. GLOBAL LIVE ENGINE ---
 
-@st.cache_data(ttl=60)
-def get_global_matches(mode="live"):
-    """Hämtar matcher globalt utan ligafilter"""
+@st.cache_data(ttl=30) # Uppdateras var 30:e sekund för maximal live-känsla
+def get_all_live_now():
+    """Hämtar ALLA matcher som pågår i hela världen just nu"""
     try:
-        if mode == "live":
-            # Hämtar ALLA pågående matcher i världen
-            url = "https://v3.football.api-sports.io"
-        else:
-            # Hämtar ALLA dagens matcher i världen
-            today = datetime.now().strftime('%Y-%m-%d')
-            url = f"https://v3.football.api-sports.io{today}"
-            
+        # Ingen filtrering på liga = vi får rubbet (U21, Träningsmatcher, Kval, etc.)
+        url = "https://v3.football.api-sports.io"
         res = requests.get(url, headers=HEADERS, timeout=15).json()
         return res.get('response', [])
-    except: return []
+    except:
+        return []
 
-# --- 3. DASHBOARD UI ---
-st.title("🌍 GOALPREDICTOR GLOBAL-SCAN")
-st.caption(f"Status: Connected | Date: {datetime.now().strftime('%Y-%m-%d')}")
-
-live_tab, upcoming_tab = st.tabs(["🔴 LIVE WORLDWIDE", "📅 UPCOMING TODAY"])
-
-with live_tab:
-    live_data = get_global_matches(mode="live")
+def calculate_neural_live(hg, ag, elapsed):
+    """Snabb-analys av målchans baserat på tid kvar"""
+    rem_time = 90 - elapsed
+    if rem_time <= 0: return 0
+    # xG-baserad projektion för resten av matchen
+    current_total = hg + ag
+    if current_total >= 3: return 100
     
-    if live_data:
-        st.subheader(f"Visar {len(live_data)} pågående matcher")
-        for m in live_data:
-            h, a = m['teams']['home']['name'], m['teams']['away']['name']
-            hg, ag = m['goals']['home'], m['goals']['away']
-            time = m['fixture']['status']['elapsed']
-            league = m['league']['name']
-            country = m['league']['country']
-            
+    # Neural projektion (förenklad för live-listan)
+    projected = current_total + (1.2 * (rem_time/90))
+    prob = min(99.9, round((projected / 2.5) * 65, 1))
+    return prob
+
+# --- 3. DASHBOARD ---
+st.title("🌍 OMNI-GLOBAL LIVE TRACKER")
+st.write(f"Söker av världsmarknaden... {datetime.now().strftime('%H:%M:%S')}")
+
+live_matches = get_all_live_now()
+
+if live_matches:
+    st.subheader(f"🔴 {len(live_matches)} MATCHER IGÅNG JUST NU")
+    
+    # Skapa kolumner för att visa fler matcher samtidigt
+    col1, col2 = st.columns(2)
+    
+    for i, m in enumerate(live_matches):
+        h, a = m['teams']['home']['name'], m['teams']['away']['name']
+        hg, ag = m['goals']['home'], m['goals']['away']
+        elapsed = m['fixture']['status']['elapsed']
+        league = m['league']['name']
+        country = m['league']['country']
+        
+        # Neural analys för varje live-match
+        prob = calculate_neural_live(hg, ag, elapsed)
+        
+        # Fördela i kolumnerna
+        target_col = col1 if i % 2 == 0 else col2
+        
+        with target_col:
             st.markdown(f"""
                 <div class="live-card">
-                    <span style="color: #00ff41;">{time}'</span> | <b>{h} {hg} - {ag} {a}</b><br>
-                    <small>{league} ({country})</small>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span class="status-live">LIVE {elapsed}'</span>
+                        <span style="color: #888; font-size: 0.8em;">{league} ({country})</span>
+                    </div>
+                    <div style="font-size: 1.4em; margin: 10px 0;">
+                        <b>{h} {hg} - {ag} {a}</b>
+                    </div>
+                    <div class="neural-text">
+                        🧠 Neural sannolikhet Över 2.5: <b>{prob}%</b>
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
-    else:
-        st.info("Inga matcher spelas live just nu. Vänta på avspark eller kolla 'Upcoming'.")
+else:
+    st.warning("Just nu hittades inga live-matcher i API:et. Det kan bero på att matcher pausats eller att din API-kvot är nådd.")
+    if st.button("Försök igen (Force Refresh)"):
+        st.cache_data.clear()
+        st.rerun()
 
-with upcoming_tab:
-    upcoming_data = get_global_matches(mode="upcoming")
-    
-    # Filtrera på matcher som inte startat (Status: NS)
-    to_be_played = [m for m in upcoming_data if m['fixture']['status']['short'] == 'NS']
-    
-    if to_be_played:
-        st.subheader(f"Schemalagda matcher idag ({len(to_be_played)} st)")
-        
-        # Gruppera efter land för bättre översikt
-        countries = sorted(list(set([m['league']['country'] for m in to_be_played])))
-        selected_country = st.selectbox("Filtrera efter land (Valfritt)", ["ALLA LÄNDER"] + countries)
-        
-        for m in to_be_played:
-            if selected_country != "ALLA LÄNDER" and m['league']['country'] != selected_country:
-                continue
-                
-            h, a = m['teams']['home']['name'], m['teams']['away']['name']
-            start = datetime.fromisoformat(m['fixture']['date']).strftime('%H:%M')
-            
-            st.markdown(f"""
-                <div class="upcoming-card">
-                    <span style="color: #00ff41;">{start}</span> | <b>{h} vs {a}</b><br>
-                    <small>{m['league']['name']} ({m['league']['country']})</small>
-                </div>
-            """, unsafe_allow_html=True)
-    else:
-        st.warning("Inga fler schemalagda matcher hittades för idag.")
+# --- 4. UPCOMING SHORTLIST (Sverige-fokus) ---
+st.sidebar.header("🏆 IKVÄLL: VM-KVAL PLAY-OFF")
+st.sidebar.markdown("""
+- **20:45** | Ukraina vs Sverige
+- **20:45** | Italien vs Nordirland
+- **20:45** | Polen vs Albanien
+- **20:45** | Wales vs Bosnien
+""")
 
-# --- SIDEBAR TOOLS ---
-st.sidebar.header("🛠️ Global Tools")
-if st.sidebar.button("FORCE REFRESH WORLD DATA"):
+if st.sidebar.button("Rensa Cache & Uppdatera"):
     st.cache_data.clear()
     st.rerun()
-
-st.sidebar.markdown("""
-**Dagens Toppmatcher (CET):**
-- 18:00: Turkiet - Rumänien
-- 20:00: Brasilien - Frankrike
-- 20:45: **Ukraina - Sverige**
-- 20:45: Italien - Nordirland
-""")
