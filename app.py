@@ -1,128 +1,98 @@
 import streamlit as st
 import requests
 import pandas as pd
-import numpy as np
 from datetime import datetime
 
-# --- 1. PRO-TERMINAL STYLING ---
-st.set_page_config(page_title="GoalPredictor v150.0 OMNI-WEATHER", layout="wide")
+# --- 1. DESIGN & STYLING ---
+st.set_page_config(page_title="GLOBAL LIVE SCANNER v150", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background: #000000; color: #00ff41; font-family: 'Courier New', monospace; }
-    .stMetric { background: #050505; padding: 15px; border: 1px solid #00ff41; border-radius: 5px; }
-    .stButton>button { background: #00ff41; color: black; font-weight: 900; width: 100%; height: 3.5em; border: none; transition: 0.3s; }
-    .stButton>button:hover { background: #ffffff; box-shadow: 0 0 30px #00ff41; }
-    .neural-box { background: #050505; padding: 25px; border: 2px solid #00ff41; text-align: center; margin-bottom: 25px; }
-    h2, h3 { color: #00ff41 !important; letter-spacing: 2px; }
+    .live-card { 
+        background: #080808; 
+        padding: 15px; 
+        border: 1px solid #00ff41; 
+        border-radius: 10px; 
+        margin-bottom: 10px;
+        transition: 0.3s;
+    }
+    .live-card:hover { border-color: #ffffff; box-shadow: 0 0 15px #00ff41; }
+    .status-blink { color: #ff0000; font-weight: bold; animation: blinker 1.5s linear infinite; }
+    @keyframes blinker { 50% { opacity: 0; } }
+    .score-box { font-size: 1.8em; font-weight: 900; letter-spacing: 5px; color: #fff; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. API CONFIG ---
-# TheSportsDB använder testnyckel "3" (Offentlig)
-SPORTSDB_KEY = "3"
-BASE_URL = f"https://www.thesportsdb.com{SPORTSDB_KEY}"
+# --- 2. API CONFIG (TheSportsDB Key: 3) ---
+BASE_URL = "https://www.thesportsdb.com"
 
-# Väder-API (Hämtas säkert från Streamlit Secrets på GitHub)
-try:
-    WEATHER_API_KEY = st.secrets["WEATHER_API_KEY"]
-except:
-    WEATHER_API_KEY = None # Fallback om nyckel saknas
-
-# --- 3. DATA ENGINES ---
-
-@st.cache_data(ttl=3600)
-def get_all_leagues():
-    url = f"{BASE_URL}/all_leagues.php"
+@st.cache_data(ttl=30)
+def get_all_livescores():
+    """Hämtar alla live-matcher för fotboll globalt"""
+    # Vi använder livescore-endpointen för Soccer
+    url = f"{BASE_URL}/latestsoccer.php"
     try:
-        res = requests.get(url).json()
-        return [l for l in res.get('leagues', []) if l['strSport'] == 'Soccer']
-    except: return []
+        res = requests.get(url, timeout=10).json()
+        return res.get('teams', []) # Vissa endpoints returnerar 'teams' för live
+    except:
+        # Fallback till dagens matcher om livescore-endpointen är nere
+        try:
+            url_today = f"{BASE_URL}/eventsday.php?d={datetime.now().strftime('%Y-%m-%d')}&s=Soccer"
+            res_today = requests.get(url_today).json()
+            return res_today.get('events', [])
+        except: return []
 
-@st.cache_data(ttl=3600)
-def get_teams(league_name):
-    url = f"{BASE_URL}/search_all_teams.php?l={league_name.replace(' ', '%20')}"
-    try:
-        res = requests.get(url).json()
-        return res.get('teams', [])
-    except: return []
+# --- 3. DASHBOARD INTERFACE ---
+st.title("🔴 OMNI-GLOBAL LIVE SCANNER")
+st.subheader(f"System Time: {datetime.now().strftime('%H:%M:%S')} | Global Coverage Active")
 
-def get_weather_impact(city):
-    """Hämtar väderdata och beräknar en multiplikator för målprognosen"""
-    if not WEATHER_API_KEY or not city:
-        return 1.0, "WEATHER: DATA UNAVAILABLE"
-    
-    try:
-        w_url = f"http://api.openweathermap.org{city}&appid={WEATHER_API_KEY}&units=metric"
-        res = requests.get(w_url, timeout=5).json()
-        if res.get('main'):
-            temp = res['main']['temp']
-            cond = res['weather'][0]['main'].lower()
-            # Minskar förväntade mål vid regn/oväder (Debuff)
-            mod = 0.88 if any(x in cond for x in ["rain", "snow", "storm"]) else 1.0
-            return mod, f"{cond.upper()} | {temp}°C"
-    except: pass
-    return 1.0, "WEATHER: NEUTRAL"
-
-def run_neural_simulation(h_exp, a_exp, w_mod, sims=100000):
-    """Neural simulation baserat på väderjusterad xG"""
-    h_sim = np.random.poisson(max(0.1, h_exp * w_mod), sims)
-    a_sim = np.random.poisson(max(0.1, a_exp * w_mod), sims)
-    totals = h_sim + a_sim
-    results = {line: round(np.mean(totals > line) * 100, 1) for line in [0.5, 1.5, 2.5, 3.5]}
-    return results
-
-# --- 4. INTERFACE ---
-st.title("🌍 GOALPREDICTOR OMNI (WEATHER + SPORTS-DB)")
-
-tab1, tab2 = st.tabs(["🧠 NEURAL SCANNER", "🗺️ WORLD EXPLORER"])
-
-with tab1:
-    leagues = get_all_leagues()
-    if leagues:
-        l_names = [l['strLeague'] for l in leagues]
-        sel_league = st.sidebar.selectbox("Välj Liga", l_names)
-        
-        teams = get_teams(sel_league)
-        if teams:
-            t_names = [t['strTeam'] for t in teams]
-            col1, col2 = st.columns(2)
-            h_team = col1.selectbox("Home Team", t_names, index=0)
-            a_team = col2.selectbox("Away Team", t_names, index=min(1, len(t_names)-1))
-            
-            # Hitta stad för väderkoll
-            h_team_data = next(t for t in teams if t['strTeam'] == h_team)
-            city = h_team_data.get('strLocation', '')
-
-            if st.button("EXECUTE OMNI-SCAN"):
-                w_mod, w_desc = get_weather_impact(city)
-                
-                # Grund-xG (Hemmafördel inräknat)
-                h_exp, a_exp = 1.7, 1.3 
-                probs = run_neural_simulation(h_exp, a_exp, w_mod)
-                
-                st.markdown(f"""
-                <div class='neural-box'>
-                    <h2>{h_team} vs {a_team}</h2>
-                    <p style='color: #fff;'>{sel_league} | {city.upper()}</p>
-                    <h3 style='color: #ff00ff;'>{w_desc}</h3>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                res_cols = st.columns(4)
-                for i, line in enumerate(probs):
-                    res_cols[i].metric(f"Över {line}", f"{probs[line]}%")
-        else:
-            st.info("Inga lag hittades i denna liga.")
-
-with tab2:
-    st.subheader("🗺️ Global Search")
-    q = st.text_input("Sök land (t.ex. 'Saudi Arabia', 'Egypt', 'Sweden')")
-    if leagues:
-        filtered = [l for l in leagues if q.lower() in l['strLeague'].lower() or q.lower() in (l.get('strCountry') or "").lower()]
-        st.table(pd.DataFrame(filtered)[['strLeague', 'strCountry']].head(15))
-
-st.sidebar.caption("v150.0 | Engine: TheSportsDB + OpenWeather")
-if st.sidebar.button("REFRESH"):
+# Knapp för att tvinga uppdatering
+if st.sidebar.button("FORCE REFRESH SYSTEM"):
     st.cache_data.clear()
     st.rerun()
+
+live_data = get_all_livescores()
+
+if not live_data:
+    st.info("Söker efter matcher... Om listan är tom finns inga pågående matcher i databasen just nu.")
+    st.caption("Tips: Testa 'Force Refresh' i sidomenyn.")
+else:
+    # Skapa kolumner för att visa matcher i ett snyggt rutnät
+    col1, col2 = st.columns(2)
+    
+    for i, match in enumerate(live_data):
+        # Hanterar olika namngivning i API-svaren
+        home_team = match.get('strHomeTeam') or match.get('strEvent', '').split(' vs ')[0]
+        away_team = match.get('strAwayTeam') or match.get('strEvent', '').split(' vs ')[1] if ' vs ' in str(match.get('strEvent')) else "Unknown"
+        home_score = match.get('intHomeScore', '0')
+        away_score = match.get('intAwayScore', '0')
+        league = match.get('strLeague', 'International')
+        status = match.get('strStatus', 'LIVE')
+        progress = match.get('strProgress', "In Play")
+
+        target_col = col1 if i % 2 == 0 else col2
+        
+        with target_col:
+            st.markdown(f"""
+            <div class="live-card">
+                <div style="display: flex; justify-content: space-between;">
+                    <span class="status-blink">● {status} ({progress})</span>
+                    <span style="color: #666; font-size: 0.8em;">{league}</span>
+                </div>
+                <div style="text-align: center; margin: 10px 0;">
+                    <div style="color: #00ff41; font-size: 1.1em;">{home_team}</div>
+                    <div class="score-box">{home_score} - {away_score}</div>
+                    <div style="color: #00ff41; font-size: 1.1em;">{away_team}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+# --- 4. WORLD EXPLORER (Sökning) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🔍 Sök i världen")
+search_country = st.sidebar.text_input("Land (t.ex. Egypt, Saudi, Sweden)")
+
+if search_country:
+    st.sidebar.write(f"Söker data för {search_country}...")
+    # Här kan du lägga till specifik söklogik för länder om du vill se ligor
