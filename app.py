@@ -3,90 +3,103 @@ import requests
 import numpy as np
 import pandas as pd
 
-# --- 1. SETUP & MATRIX STYLE ---
-st.set_page_config(page_title="GoalPredictor OMNI", layout="wide")
-
+# --- 1. SETUP ---
+st.set_page_config(page_title="GoalPredictor OMNI-ULTRA", layout="wide")
 st.markdown("""
     <style>
     .stApp { background: #000000; color: #00ff41; font-family: 'Courier New', monospace; }
-    .stButton>button { 
-        background: #00ff41 !important; color: black !important; 
-        font-weight: 900; width: 100%; height: 4em; border: 2px solid #ffffff;
-        font-size: 18px !important; text-transform: uppercase; margin: 20px 0;
-    }
-    .metric-box { background: #050505; border: 1px solid #00ff41; padding: 15px; border-radius: 10px; text-align: center; }
-    [data-testid="stMetricValue"] { color: #00ff41 !important; font-size: 2rem !important; }
-    [data-testid="stMetricLabel"] { color: #ffffff !important; }
+    .live-card { background: #080808; padding: 15px; border-left: 5px solid #00ff41; margin-bottom: 10px; border-radius: 5px; }
+    .neural-box { background: #050505; padding: 20px; border: 2px solid #00ff41; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. API CONFIG (FELSÄKER) ---
-API_KEY = "210961b3460594ed78d0a659e1ebf79b"
-HEADERS = {'x-apisports-key': API_KEY}
+# API KEYS
+FOOTBALL_API_KEY = "210961b3460594ed78d0a659e1ebf79b"
+WEATHER_API_KEY = "7bd889f1cb9cec6e42e15fc106125abe"
+HEADERS = {'x-apisports-key': FOOTBALL_API_KEY}
 
-@st.cache_data(ttl=600) # Kortare cache för att snabbare upptäcka om anslutningen är tillbaka
-def get_data(l_id):
-    url = f"https://v3.football.api-sports.io{l_id}&season=2025"
+# --- 2. ENGINES ---
+
+@st.cache_data(ttl=60)
+def get_live_matches():
     try:
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        res.raise_for_status() # Kastar fel om statuskoden är dålig
-        data = res.json()
-        if not data.get('response'):
-            return None
-        return data['response'][0]['league']['standings'][0]
-    except Exception as e:
-        return f"Error: {e}"
+        res = requests.get("https://v3.football.api-sports.io", headers=HEADERS, timeout=10).json()
+        return res.get('response', [])
+    except: return []
 
-def run_sim(h_xg, a_xg):
-    # Simulera 1 miljon matcher för 0.5 - 5.5 mål
-    h_s = np.random.poisson(h_xg * 1.10, 1000000)
-    a_s = np.random.poisson(a_xg * 0.95, 1000000)
+@st.cache_data(ttl=3600)
+def get_standings(l_id):
+    for s in [2025, 2024]:
+        try:
+            res = requests.get(f"https://v3.football.api-sports.io{l_id}&season={s}", headers=HEADERS).json()
+            if res.get('response'): return res['response'][0]['league']['standings'][0], s
+        except: continue
+    return None, None
+
+def run_sim(h_exp, a_exp, sims=1000000):
+    h_s = np.random.poisson(max(0.1, h_exp), sims)
+    a_s = np.random.poisson(max(0.1, a_exp), sims)
     t = h_s + a_s
-    lines = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
-    return {line: round(np.mean(t > line) * 100, 1) for line in lines}
+    return {line: round(np.mean(t > line) * 100, 1) for line in [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]}
 
-# --- 3. UI LAYOUT ---
-tab1, tab2 = st.tabs(["🧠 NEURAL SCANNER", "🔴 LIVE MONITOR"])
+# --- 3. UI ---
+st.title("🧠 GOALPREDICTOR v150.0 OMNI")
 
-with tab1:
-    st.sidebar.header("LIGA-VAL")
+t1, t2 = st.tabs(["🔍 PRE-MATCH SCANNER", "🔴 LIVE ANALYZER"])
+
+with t1:
     LEAGUES = {"Allsvenskan": 113, "Premier League": 39, "La Liga": 140, "Serie A": 135}
-    l_name = st.sidebar.selectbox("Välj Liga", list(LEAGUES.keys()))
+    l_name = st.selectbox("Välj Liga", list(LEAGUES.keys()))
+    data, yr = get_standings(LEAGUES[l_name])
     
-    standings = get_data(LEAGUES[l_name])
-    
-    if isinstance(standings, str): # Om get_data returnerar ett felmeddelande
-        st.error(f"⚠️ Anslutningsproblem: API:et svarar inte. Kontrollera din internetanslutning eller API-nyckel.")
-        st.info("Tips: Vänta 1 minut och ladda om sidan.")
-    elif standings:
-        teams = sorted([t['team']['name'] for t in standings])
+    if data:
+        st.caption(f"Statistik baserad på säsong: {yr}")
+        teams = sorted([t['team']['name'] for t in data])
         c1, c2 = st.columns(2)
-        h_team = c1.selectbox("Välj Hemmalag", teams, index=0)
-        a_team = c2.selectbox("Välj Bortalag", teams, index=1)
+        h_t = c1.selectbox("Hemmalag", teams, index=0)
+        a_t = c2.selectbox("Bortalag", teams, index=1)
         
-        # --- DEN STORA KNAPPEN ---
-        if st.button("KÖR NEURAL ANALYS (VISA % 0.5 - 5.5)"):
-            h_d = next(t for t in standings if t['team']['name'] == h_team)
-            a_d = next(t for t in standings if t['team']['name'] == a_team)
+        if st.button("KÖR FULL SPECTRUM ANALYS"):
+            h_s = next(t for t in data if t['team']['name'] == h_t)
+            a_s = next(t for t in data if t['team']['name'] == a_t)
             
-            # Beräkna målsnitt från säsongsdata
-            h_avg = h_d['all']['goals']['for'] / (h_d['all']['played'] or 1)
-            a_avg = a_d['all']['goals']['for'] / (a_d['all']['played'] or 1)
+            h_exp = (h_s['all']['goals']['for'] / (h_s['all']['played'] or 1)) * 1.10
+            a_exp = (a_s['all']['goals']['for'] / (a_s['all']['played'] or 1)) * 0.95
             
-            probs = run_sim(h_avg, a_avg)
-            
-            st.markdown(f"### 🎯 Analys: {h_team} vs {a_team}")
-            
-            # --- VISA PROCENTEN I ETT SVEP (6 KOLUMNER) ---
+            probs = run_sim(h_exp, a_exp)
+            st.markdown(f"<div class='neural-box'><h2>{h_t} vs {a_t}</h2></div>", unsafe_allow_html=True)
             cols = st.columns(6)
-            for i, line in enumerate(probs):
-                with cols[i]:
-                    st.metric(f"ÖVER {line}", f"{probs[line]}%")
-                    st.caption(f"Fair: {round(100/probs[line], 2) if probs[line] > 0 else 'N/A'}")
-            
-            st.success("✅ Neural simulering av 1 000 000 matcher klar.")
+            for i, (line, p) in enumerate(probs.items()):
+                cols[i].metric(f"Över {line}", f"{p}%")
     else:
-        st.warning("Ingen data hittades. Prova en annan liga eller kontrollera säsongsår.")
+        st.error("Kunde inte hämta tabell. Kontrollera API-nyckel.")
 
-with tab2:
-    st.info("Live-monitor: Matcher dyker upp här vid avspark (t.ex. kl. 20:45 ikväll).")
+with t2:
+    st.subheader("Live-matcher just nu")
+    live_list = get_live_matches()
+    
+    if not live_list:
+        st.info("Inga live-matcher hittades just nu. Visar demo-layout:")
+        live_list = [{
+            'teams': {'home': {'name': 'Demo Hemmalag'}, 'away': {'name': 'Demo Bortalag'}},
+            'goals': {'home': 1, 'away': 1},
+            'fixture': {'status': {'elapsed': 65}},
+            'league': {'name': 'Träningsmatch'}
+        }]
+    
+    for m in live_list:
+        h, a = m['teams']['home']['name'], m['teams']['away']['name']
+        hg, ag = m['goals']['home'], m['goals']['away']
+        time = m['fixture']['status']['elapsed']
+        
+        # Enkel live-analys (xG baserat på tid kvar)
+        rem_factor = (90 - time) / 90
+        prob_o25 = min(100, round((hg+ag + 1.2 * rem_factor) * 35, 1)) if hg+ag < 3 else 100
+        
+        st.markdown(f"""
+            <div class="live-card">
+                <b>{h} {hg} - {ag} {a}</b> ({time}')<br>
+                <small>{m['league']['name']}</small><br>
+                <span style="color: #00ff41;">Sannolikhet Över 2.5 mål: {prob_o25}%</span>
+            </div>
+        """, unsafe_allow_html=True)
